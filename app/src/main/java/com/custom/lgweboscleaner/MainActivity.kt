@@ -102,20 +102,12 @@ class MainActivity : AppCompatActivity() {
                 .show()
         }
 
-        // 3. Clean TV & Upload Apps Catalog via SFTP
+        // 3. Clean TV & Repack Apps Catalog without Permission Denied
         findViewById<Button>(R.id.btnClean).setOnClickListener {
             savePrefs()
-            runTask("Uploading TV apps catalog via SFTP & restarting launcher...") {
+            runTask("Syncing TV apps & repacking launcher (bypassing read-only lock)...") {
                 val session = createSshSession()
                 try {
-                    val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                    
-                    // Query actual installed apps from webOS if possible
-                    val rawLp = execOnSession(
-                        session,
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/listLaunchPoints' '{}' 2>/dev/null || true"
-                    )
-
                     val appsJsContent = """
 window.TV_APPS = {
   "apps": [
@@ -142,20 +134,15 @@ window.TV_APPS = {
 };
 """.trimIndent()
 
-                    // Save to phone cache and upload via SFTP (100% reliable)
+                    // Upload to /media/developer/temp (where prisoner ALWAYS has write permission)
+                    execOnSession(session, "mkdir -p /media/developer/temp")
                     val localAppsJs = File(cacheDir, "apps.js")
                     localAppsJs.writeText(appsJsContent)
-                    uploadViaSftp(session, localAppsJs, "$appDir/apps.js")
+                    uploadViaSftp(session, localAppsJs, "/media/developer/temp/apps.js")
 
-                    // Clean temp cache & restart the launcher so it reloads apps.js
-                    execOnSession(
-                        session,
-                        "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                        "sleep 1; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                    )
-                    "Apps catalog uploaded! Now click 'Add app (+)' on your TV with your remote to add YouTube, Netflix, etc. to the screen!"
+                    // Repack installed app into a fresh IPK in /media/developer/temp and reinstall via system service
+                    val repackResult = repackAndReinstallLauncher(session)
+                    "Success! Apps synced and launcher updated!\nNow click 'Add app (+)' on your TV screen!\n$repackResult"
                 } finally {
                     session.disconnect()
                 }
@@ -175,17 +162,13 @@ window.TV_APPS = {
             runTask("Applying '$selectedTheme' theme...") {
                 val session = createSshSession()
                 try {
-                    val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                    // Copy the selected theme's config.json over the active config.json
-                    val cmd =
-                        "if [ -f \"$appDir/themes/$selectedTheme/config.json\" ]; then " +
-                        "cp \"$appDir/themes/$selectedTheme/config.json\" \"$appDir/config.json\"; " +
-                        "fi; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                        "sleep 1; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                    execOnSession(session, cmd)
-                    "Theme '$selectedTheme' applied and launcher restarted!"
+                    execOnSession(
+                        session,
+                        "mkdir -p /media/developer/temp && " +
+                        "cp /media/developer/apps/usr/palm/applications/com.gathin.tvhome/themes/$selectedTheme/config.json /media/developer/temp/config.json 2>/dev/null || true"
+                    )
+                    val res = repackAndReinstallLauncher(session)
+                    "Theme '$selectedTheme' applied and launcher restarted!\n$res"
                 } finally {
                     session.disconnect()
                 }
@@ -204,6 +187,55 @@ window.TV_APPS = {
         findViewById<Button>(R.id.btnSettingsNetwork).setOnClickListener { openTvSettings("network") }
     }
 
+    /**
+     * Copies the existing launcher into /media/developer/temp/repack, injects any updated
+     * apps.js / wallpaper.jpg / config.json, builds a valid webOS .ipk, and installs it via appInstallService.
+     */
+    private fun repackAndReinstallLauncher(session: Session): String {
+        val script = """
+            rm -rf /media/developer/temp/repack
+            mkdir -p /media/developer/temp/repack/data/usr/palm/applications/com.gathin.tvhome
+            mkdir -p /media/developer/temp/repack/ctrl
+            
+            cp -r /media/developer/apps/usr/palm/applications/com.gathin.tvhome/* /media/developer/temp/repack/data/usr/palm/applications/com.gathin.tvhome/ 2>/dev/null || true
+            
+            if [ -f /media/developer/temp/apps.js ]; then
+                cp /media/developer/temp/apps.js /media/developer/temp/repack/data/usr/palm/applications/com.gathin.tvhome/apps.js
+            fi
+            if [ -f /media/developer/temp/wallpaper.jpg ]; then
+                cp /media/developer/temp/wallpaper.jpg /media/developer/temp/repack/data/usr/palm/applications/com.gathin.tvhome/wallpaper.jpg
+                cp /media/developer/temp/wallpaper.jpg /media/developer/temp/repack/data/usr/palm/applications/com.gathin.tvhome/themes/ribbon/wallpaper.jpg 2>/dev/null || true
+            fi
+            if [ -f /media/developer/temp/config.json ]; then
+                cp /media/developer/temp/config.json /media/developer/temp/repack/data/usr/palm/applications/com.gathin.tvhome/config.json
+            fi
+            
+            cd /media/developer/temp/repack
+            echo "2.0" > debian-binary
+            cat << 'EOF' > ctrl/control
+Package: com.gathin.tvhome
+Version: 1.8.1
+Architecture: all
+Maintainer: CYTV
+Description: Clean Your TV Home
+EOF
+            tar -czf control.tar.gz -C ctrl .
+            tar -czf data.tar.gz -C data .
+            ar r /media/developer/temp/cytv_patched.ipk debian-binary control.tar.gz data.tar.gz 2>/dev/null || tar -czf /media/developer/temp/cytv_patched.ipk debian-binary control.tar.gz data.tar.gz
+            
+            luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{"id":"com.ares.defaultName","ipkUrl":"/media/developer/temp/cytv_patched.ipk","subscribe":true}'
+        """.trimIndent()
+
+        val out = execOnSession(session, script, timeoutMs = 25000)
+        execOnSession(
+            session,
+            "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+            "sleep 1; " +
+            "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+        )
+        return out.takeLast(160)
+    }
+
     private fun openTvSettings(target: String) {
         savePrefs()
         runTask("Opening TV $target settings...") {
@@ -216,9 +248,10 @@ window.TV_APPS = {
     }
 
     private fun handleFileUpload(uri: Uri, isWallpaper: Boolean) {
-        runTask(if (isWallpaper) "Uploading wallpaper into TV launcher..." else "Uploading & installing .ipk add-on...") {
+        runTask(if (isWallpaper) "Uploading wallpaper & updating launcher..." else "Uploading & installing .ipk add-on...") {
             val session = createSshSession()
             try {
+                execOnSession(session, "mkdir -p /media/developer/temp")
                 if (isWallpaper) {
                     val tempFile = File(cacheDir, "wallpaper.jpg")
                     contentResolver.openInputStream(uri)?.use { input ->
@@ -230,23 +263,16 @@ window.TV_APPS = {
                         }
                     }
 
-                    val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                    uploadViaSftp(session, tempFile, "$appDir/wallpaper.jpg")
-                    execOnSession(
-                        session,
-                        "cp $appDir/wallpaper.jpg $appDir/themes/ribbon/wallpaper.jpg 2>/dev/null || true; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                        "sleep 1; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                    )
-                    "Success! Custom wallpaper injected into Clean Your TV and relaunched!"
+                    // Upload to /media/developer/temp/wallpaper.jpg (no permission error!)
+                    uploadViaSftp(session, tempFile, "/media/developer/temp/wallpaper.jpg")
+                    val res = repackAndReinstallLauncher(session)
+                    "Success! Custom wallpaper packaged into launcher and restarted!\n$res"
                 } else {
                     val tempIpk = File(cacheDir, "addon_install.ipk")
                     contentResolver.openInputStream(uri)?.use { input ->
                         FileOutputStream(tempIpk).use { out -> input.copyTo(out) }
                     }
                     val remoteIpk = "/media/developer/temp/addon_install.ipk"
-                    execOnSession(session, "mkdir -p /media/developer/temp")
                     uploadViaSftp(session, tempIpk, remoteIpk)
 
                     val installCmd = "luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"$remoteIpk\",\"subscribe\":true}'"
