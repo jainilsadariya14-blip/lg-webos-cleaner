@@ -69,121 +69,59 @@ class MainActivity : AppCompatActivity() {
         // 1. Pair & Test Connection
         findViewById<Button>(R.id.btnPair).setOnClickListener {
             savePrefs()
-            runTask("Checking TV connection & launcher status...") {
-                val out = execSshCommand(
-                    "luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"Phone Connected!\"}' && " +
-                    "ls -1 /media/developer/apps/usr/palm/applications/ 2>/dev/null || true"
-                )
-                if (out.contains("com.gathin.tvhome")) {
-                    "Connected! Clean Your TV launcher is active."
-                } else {
-                    "Connected! Note: com.gathin.tvhome not found."
-                }
+            runTask("Checking TV connection...") {
+                val out = execSshCommand("luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"Phone Connected!\"}'")
+                "Connected to TV successfully! $out"
             }
         }
 
-        // 2. Restore Original LG Home Screen
+        // 2. Restore Original LG Home
         findViewById<View>(R.id.cardRestoreHome).setOnClickListener {
             savePrefs()
             AlertDialog.Builder(this)
                 .setTitle("Restore LG Home")
-                .setMessage("Stop custom Home interception and open the original LG Home screen?")
+                .setMessage("Stop custom Home and open original LG Home?")
                 .setPositiveButton("Restore") { _, _ ->
-                    runTask("Restoring original LG Home screen...") {
-                        val cmd =
-                            "luna-send-pub -n 1 'luna://com.local.nativehome.service/disable' '{}' 2>/dev/null; " +
-                            "luna-send-pub -n 1 'luna://com.webos.service.eim/deleteDevice' '{\"appId\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                            "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.webos.app.home\"}'"
+                    runTask("Restoring original LG Home...") {
+                        val cmd = "luna-send-pub -n 1 'luna://com.local.nativehome.service/disable' '{}' 2>/dev/null; " +
+                                  "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.webos.app.home\"}'"
                         val res = execSshCommand(cmd)
-                        "Original LG Home launched!\n$res"
+                        "Original LG Home restored!\n$res"
                     }
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
         }
 
-        // 3. Clean TV & Refresh Launcher Apps
+        // 3. Clean TV & Restart Home
         findViewById<Button>(R.id.btnClean).setOnClickListener {
             savePrefs()
-            runTask("Cleaning cache & restarting Clean Your TV Home...") {
-                val session = createSshSession()
-                try {
-                    val appsJsContent = """
-window.TV_APPS = {
-  "apps": [
-    {"id": "youtube.leanback.v4", "title": "YouTube", "icon": "", "iconColor": "#FF0000"},
-    {"id": "netflix", "title": "Netflix", "icon": "", "iconColor": "#E50914"},
-    {"id": "amazon", "title": "Prime Video", "icon": "", "iconColor": "#00A8E1"},
-    {"id": "hotstar", "title": "JioHotstar", "icon": "", "iconColor": "#0F1014"},
-    {"id": "com.jio.media.jiotvplus", "title": "JioTV+", "icon": "", "iconColor": "#0057E7"},
-    {"id": "sonyliv", "title": "SonyLIV", "icon": "", "iconColor": "#111111"},
-    {"id": "com.zee5.app", "title": "ZEE5", "icon": "", "iconColor": "#8230C6"},
-    {"id": "com.webos.app.livetv", "title": "Live TV", "icon": "", "iconColor": "#2B2B2B"},
-    {"id": "com.webos.app.browser", "title": "Web Browser", "icon": "", "iconColor": "#0078D7"},
-    {"id": "com.webos.app.photovideo", "title": "Photos & Video", "icon": "", "iconColor": "#6B4FBB"},
-    {"id": "com.webos.app.miracast", "title": "Screen Share", "icon": "", "iconColor": "#00897B"},
-    {"id": "com.palm.app.settings", "title": "TV Settings", "icon": "", "iconColor": "#555555"},
-    {"id": "com.webos.app.home", "title": "Original LG Home", "icon": "", "iconColor": "#A50034"},
-    {"id": "org.webosbrew.hbchannel", "title": "Homebrew Channel", "icon": "", "iconColor": "#333333"}
-  ],
-  "inputs": [
-    {"appId": "com.webos.app.hdmi1", "label": "HDMI 1"},
-    {"appId": "com.webos.app.hdmi2", "label": "HDMI 2"},
-    {"appId": "com.webos.app.hdmi3", "label": "HDMI 3"}
-  ]
-};
-""".trimIndent()
-
-                    // Write apps.js to temp storage and copy it to the launcher directory via sudo/fallback or direct override
-                    val localAppsJs = File(cacheDir, "apps.js")
-                    localAppsJs.writeText(appsJsContent)
-                    uploadViaSftp(session, localAppsJs, "/media/developer/temp/apps.js")
-
-                    val updateScript = """
-                        cp /media/developer/temp/apps.js /media/developer/apps/usr/palm/applications/com.gathin.tvhome/apps.js 2>/dev/null || \
-                        cat /media/developer/temp/apps.js > /media/developer/apps/usr/palm/applications/com.gathin.tvhome/apps.js 2>/dev/null || true
-                        
-                        rm -rf /tmp/* /media/developer/temp/* 2>/dev/null
-                        luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null || true
-                        sleep 1
-                        luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'
-                    """.trimIndent()
-
-                    execOnSession(session, updateScript)
-                    "Success! TV cache cleared, apps synced, and Clean Your TV relaunched!"
-                } finally {
-                    session.disconnect()
-                }
+            runTask("Cleaning cache & restarting launcher...") {
+                val cmd = "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                          "sleep 1; " +
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                val res = execSshCommand(cmd)
+                "TV cleaned and Clean Your TV restarted!\n$res"
             }
         }
 
-        // 4. Custom Wallpaper from Phone
+        // 4. Custom Wallpaper
         findViewById<Button>(R.id.btnWallpaper).setOnClickListener {
             savePrefs()
             pickWallpaperLauncher.launch("image/*")
         }
 
-        // 5. Apply Selected Theme
+        // 5. Apply Theme
         findViewById<Button>(R.id.btnApplyTheme).setOnClickListener {
             savePrefs()
             val selectedTheme = spThemes.selectedItem?.toString() ?: "classic"
             runTask("Applying '$selectedTheme' theme...") {
-                val session = createSshSession()
-                try {
-                    val themeScript = """
-                        APP_DIR="/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                        if [ -f "\$APP_DIR/themes/$selectedTheme/config.json" ]; then
-                            cp "\$APP_DIR/themes/$selectedTheme/config.json" "\$APP_DIR/config.json" 2>/dev/null || true
-                        fi
-                        luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null || true
-                        sleep 1
-                        luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'
-                    """.trimIndent()
-                    execOnSession(session, themeScript)
-                    "Theme '$selectedTheme' applied and launcher restarted!"
-                } finally {
-                    session.disconnect()
-                }
+                val cmd = "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                          "sleep 1; " +
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\",\"params\":{\"theme\":\"$selectedTheme\"}}'"
+                val res = execSshCommand(cmd)
+                "Theme command sent to TV!\n$res"
             }
         }
 
@@ -202,9 +140,7 @@ window.TV_APPS = {
     private fun openTvSettings(target: String) {
         savePrefs()
         runTask("Opening TV $target settings...") {
-            val cmd =
-                "luna-send-pub -n 1 'luna://com.palm.app.settings/launch' '{\"target\":\"$target\"}' 2>/dev/null || " +
-                "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.webos.app.settings\",\"params\":{\"target\":\"$target\"}}'"
+            val cmd = "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.palm.app.settings\",\"params\":{\"target\":\"$target\"}}'"
             val res = execSshCommand(cmd)
             "TV Settings opened!\n$res"
         }
@@ -225,29 +161,22 @@ window.TV_APPS = {
                             scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
                         }
                     }
-
                     uploadViaSftp(session, tempFile, "/media/developer/temp/wallpaper.jpg")
-                    val wallScript = """
-                        APP_DIR="/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                        cp /media/developer/temp/wallpaper.jpg "\$APP_DIR/wallpaper.jpg" 2>/dev/null || true
-                        cp /media/developer/temp/wallpaper.jpg "\$APP_DIR/themes/ribbon/wallpaper.jpg" 2>/dev/null || true
-                        luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null || true
-                        sleep 1
-                        luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'
-                    """.trimIndent()
-                    execOnSession(session, wallScript)
-                    "Success! Custom wallpaper applied and launcher restarted!"
+                    val cmd = "cp /media/developer/temp/wallpaper.jpg /media/developer/apps/usr/palm/applications/com.gathin.tvhome/wallpaper.jpg 2>/dev/null || true; " +
+                              "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                              "sleep 1; " +
+                              "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                    execOnSession(session, cmd)
+                    "Success! Wallpaper applied to TV!"
                 } else {
                     val tempIpk = File(cacheDir, "addon_install.ipk")
                     contentResolver.openInputStream(uri)?.use { input ->
                         FileOutputStream(tempIpk).use { out -> input.copyTo(out) }
                     }
-                    val remoteIpk = "/media/developer/temp/addon_install.ipk"
-                    uploadViaSftp(session, tempIpk, remoteIpk)
-
-                    val installCmd = "luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"$remoteIpk\",\"subscribe\":true}'"
-                    val out = execOnSession(session, installCmd, timeoutMs = 25000)
-                    "IPK Install Response:\n${out.take(250)}"
+                    uploadViaSftp(session, tempIpk, "/media/developer/temp/addon_install.ipk")
+                    val cmd = "luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/media/developer/temp/addon_install.ipk\",\"subscribe\":true}'"
+                    val out = execOnSession(session, cmd, 25000)
+                    "Add-on installed!\n${out.take(200)}"
                 }
             } finally {
                 session.disconnect()
@@ -271,9 +200,7 @@ window.TV_APPS = {
                 }
             }
         } catch (_: Exception) {}
-        if (keyFile.exists() && keyFile.length() > 100) {
-            return keyFile
-        }
+        if (keyFile.exists() && keyFile.length() > 100) return keyFile
         throw Exception("Could not fetch SSH key from TV. Turn ON 'Key Server' in Developer Mode app!")
     }
 
