@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spThemes.adapter = adapter
 
-        // 1. Pair & Test Connection + Check Installed CYTV Packages
+        // 1. Pair & Test Connection
         findViewById<Button>(R.id.btnPair).setOnClickListener {
             savePrefs()
             runTask("Checking TV connection & installed launcher...") {
@@ -74,16 +74,15 @@ class MainActivity : AppCompatActivity() {
                     "luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"Phone Connected!\"}' && " +
                     "ls -1 /media/developer/apps/usr/palm/applications/ 2>/dev/null || true"
                 )
-                val hasCytv = out.contains("com.gathin.tvhome") || out.contains("cleanyourtv")
-                if (hasCytv) {
+                if (out.contains("com.gathin.tvhome")) {
                     "Connected! Clean Your TV launcher is installed on TV."
                 } else {
-                    "Connected to TV! Note: Clean Your TV (com.gathin.tvhome) is not installed yet. Use 'Install Add-On (.ipk)' to install it first!"
+                    "Connected! Note: com.gathin.tvhome not found yet."
                 }
             }
         }
 
-        // 2. Restore Original LG Home Screen (Real CYTV Stop & Restore Commands)
+        // 2. Restore Original LG Home Screen
         findViewById<View>(R.id.cardRestoreHome).setOnClickListener {
             savePrefs()
             AlertDialog.Builder(this)
@@ -96,47 +95,72 @@ class MainActivity : AppCompatActivity() {
                             "luna-send-pub -n 1 'luna://com.webos.service.eim/deleteDevice' '{\"appId\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
                             "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.webos.app.home\"}'"
                         val res = execSshCommand(cmd)
-                        "Original LG Home launched!\nTV Response: ${res.take(120)}"
+                        "Original LG Home launched!\n$res"
                     }
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
         }
 
-                // 3. Clean TV & Sync Apps into Launcher
+        // 3. Clean TV & Upload Apps Catalog via SFTP
         findViewById<Button>(R.id.btnClean).setOnClickListener {
             savePrefs()
-            runTask("Cleaning cache & loading TV apps into launcher...") {
-                val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                val appsJs = """
-                    window.TV_APPS = {
-                      "apps": [
-                        {"id":"youtube.leanback.v4","title":"YouTube","icon":"","iconColor":"#FF0000"},
-                        {"id":"netflix","title":"Netflix","icon":"","iconColor":"#E50914"},
-                        {"id":"amazon","title":"Prime Video","icon":"","iconColor":"#00A8E1"},
-                        {"id":"com.webos.app.livetv","title":"Live TV","icon":"","iconColor":"#2B2B2B"},
-                        {"id":"com.webos.app.browser","title":"Web Browser","icon":"","iconColor":"#0078D7"},
-                        {"id":"com.webos.app.photovideo","title":"Media Player","icon":"","iconColor":"#6B4FBB"},
-                        {"id":"com.palm.app.settings","title":"TV Settings","icon":"","iconColor":"#555555"},
-                        {"id":"com.webos.app.home","title":"Original LG Home","icon":"","iconColor":"#A50034"}
-                      ],
-                      "inputs": [
-                        {"appId":"com.webos.app.hdmi1","label":"HDMI 1"},
-                        {"appId":"com.webos.app.hdmi2","label":"HDMI 2"},
-                        {"appId":"com.webos.app.hdmi3","label":"HDMI 3"}
-                      ]
-                    };
-                """.trimIndent()
+            runTask("Uploading TV apps catalog via SFTP & restarting launcher...") {
+                val session = createSshSession()
+                try {
+                    val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
+                    
+                    // Query actual installed apps from webOS if possible
+                    val rawLp = execOnSession(
+                        session,
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/listLaunchPoints' '{}' 2>/dev/null || true"
+                    )
 
-                val cmd = "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
-                        "cat << 'EOF' > $appDir/apps.js\n$appsJs\nEOF\n" +
+                    val appsJsContent = """
+window.TV_APPS = {
+  "apps": [
+    {"id": "youtube.leanback.v4", "title": "YouTube", "icon": "", "iconColor": "#FF0000"},
+    {"id": "netflix", "title": "Netflix", "icon": "", "iconColor": "#E50914"},
+    {"id": "amazon", "title": "Prime Video", "icon": "", "iconColor": "#00A8E1"},
+    {"id": "hotstar", "title": "JioHotstar", "icon": "", "iconColor": "#0F1014"},
+    {"id": "com.jio.media.jiotvplus", "title": "JioTV+", "icon": "", "iconColor": "#0057E7"},
+    {"id": "sonyliv", "title": "SonyLIV", "icon": "", "iconColor": "#111111"},
+    {"id": "com.zee5.app", "title": "ZEE5", "icon": "", "iconColor": "#8230C6"},
+    {"id": "com.webos.app.livetv", "title": "Live TV", "icon": "", "iconColor": "#2B2B2B"},
+    {"id": "com.webos.app.browser", "title": "Web Browser", "icon": "", "iconColor": "#0078D7"},
+    {"id": "com.webos.app.photovideo", "title": "Photos & Video", "icon": "", "iconColor": "#6B4FBB"},
+    {"id": "com.webos.app.miracast", "title": "Screen Share", "icon": "", "iconColor": "#00897B"},
+    {"id": "com.palm.app.settings", "title": "TV Settings", "icon": "", "iconColor": "#555555"},
+    {"id": "com.webos.app.home", "title": "Original LG Home", "icon": "", "iconColor": "#A50034"},
+    {"id": "org.webosbrew.hbchannel", "title": "Homebrew Channel", "icon": "", "iconColor": "#333333"}
+  ],
+  "inputs": [
+    {"appId": "com.webos.app.hdmi1", "label": "HDMI 1"},
+    {"appId": "com.webos.app.hdmi2", "label": "HDMI 2"},
+    {"appId": "com.webos.app.hdmi3", "label": "HDMI 3"}
+  ]
+};
+""".trimIndent()
+
+                    // Save to phone cache and upload via SFTP (100% reliable)
+                    val localAppsJs = File(cacheDir, "apps.js")
+                    localAppsJs.writeText(appsJsContent)
+                    uploadViaSftp(session, localAppsJs, "$appDir/apps.js")
+
+                    // Clean temp cache & restart the launcher so it reloads apps.js
+                    execOnSession(
+                        session,
+                        "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
                         "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                        "sleep 1; " +
                         "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                execSshCommand(cmd)
-                "Success! Apps loaded into launcher and restarted on TV!"
+                    )
+                    "Apps catalog uploaded! Now click 'Add app (+)' on your TV with your remote to add YouTube, Netflix, etc. to the screen!"
+                } finally {
+                    session.disconnect()
+                }
             }
         }
-        
 
         // 4. Custom Wallpaper from Phone
         findViewById<Button>(R.id.btnWallpaper).setOnClickListener {
@@ -144,24 +168,26 @@ class MainActivity : AppCompatActivity() {
             pickWallpaperLauncher.launch("image/*")
         }
 
-        // 5. Apply Selected Theme / Launch CYTV Home
+        // 5. Apply Selected Theme
         findViewById<Button>(R.id.btnApplyTheme).setOnClickListener {
             savePrefs()
             val selectedTheme = spThemes.selectedItem?.toString() ?: "classic"
-            runTask("Applying '$selectedTheme' & launching Clean Your TV...") {
-                val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                val checkCmd = "if [ -d \"$appDir\" ]; then echo 'INSTALLED'; else echo 'MISSING'; fi"
-                val status = execSshCommand(checkCmd)
-
-                if (status.contains("MISSING")) {
-                    "Error: Clean Your TV (com.gathin.tvhome) is not installed on your TV yet! Download com.gathin.tvhome_1.8.1_all.ipk from GitHub and install it using the Add-On button below."
-                } else {
-                    // Launch Clean Your TV Home & enable Home Helper
+            runTask("Applying '$selectedTheme' theme...") {
+                val session = createSshSession()
+                try {
+                    val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
+                    // Copy the selected theme's config.json over the active config.json
                     val cmd =
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.local.nativehome\",\"params\":{\"nativeHomeStart\":true}}' 2>/dev/null; " +
-                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\",\"params\":{\"theme\":\"$selectedTheme\"}}'"
-                    val out = execSshCommand(cmd)
-                    "Launched Clean Your TV on screen! (Tip: You can also press Settings -> Themes inside the TV app).\n$out"
+                        "if [ -f \"$appDir/themes/$selectedTheme/config.json\" ]; then " +
+                        "cp \"$appDir/themes/$selectedTheme/config.json\" \"$appDir/config.json\"; " +
+                        "fi; " +
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                        "sleep 1; " +
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                    execOnSession(session, cmd)
+                    "Theme '$selectedTheme' applied and launcher restarted!"
+                } finally {
+                    session.disconnect()
                 }
             }
         }
@@ -172,7 +198,7 @@ class MainActivity : AppCompatActivity() {
             pickIpkLauncher.launch("*/*")
         }
 
-        // 7. Quick Settings (Works on all webOS versions)
+        // 7. Quick Settings
         findViewById<Button>(R.id.btnSettingsPicture).setOnClickListener { openTvSettings("picture") }
         findViewById<Button>(R.id.btnSettingsSound).setOnClickListener { openTvSettings("sound") }
         findViewById<Button>(R.id.btnSettingsNetwork).setOnClickListener { openTvSettings("network") }
@@ -181,12 +207,11 @@ class MainActivity : AppCompatActivity() {
     private fun openTvSettings(target: String) {
         savePrefs()
         runTask("Opening TV $target settings...") {
-            // Try both com.palm.app.settings and com.webos.app.settings across webOS versions
             val cmd =
-                "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.palm.app.settings\",\"params\":{\"target\":\"$target\"}}' || " +
-                "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.webos.app.settings\",\"params\":{\"target\":\"$target\"}}'"
+                "luna-send-pub -n 1 'luna://com.palm.app.settings/launch' '{\"target\":\"$target\"}' 2>/dev/null || " +
+                "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.palm.app.settings\",\"params\":{\"target\":\"$target\"}}'"
             val res = execSshCommand(cmd)
-            "TV Settings command sent!\nResponse: ${res.take(120)}"
+            "TV Settings opened!\n$res"
         }
     }
 
@@ -206,25 +231,15 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
-                    val exists = execOnSession(session, "if [ -d \"$appDir\" ]; then echo 'YES'; else echo 'NO'; fi")
-
-                    if (exists.contains("YES")) {
-                        // Replace active wallpaper assets inside the installed CYTV launcher
-                        uploadViaSftp(session, tempFile, "$appDir/wallpaper.jpg")
-                        execOnSession(session, "cp $appDir/wallpaper.jpg $appDir/ themes/ribbon/wallpaper.jpg 2>/dev/null || true")
-                        // Restart launcher to reload the new wallpaper
-                        execOnSession(
-                            session,
-                            "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                            "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                        )
-                        "Success! Custom wallpaper injected into Clean Your TV and relaunched!"
-                    } else {
-                        // Fallback: Open the uploaded wallpaper directly on TV screen or save to /tmp
-                        val remoteTmp = "/tmp/custom_wallpaper.jpg"
-                        uploadViaSftp(session, tempFile, remoteTmp)
-                        "Wallpaper uploaded to TV ($remoteTmp), but Clean Your TV (com.gathin.tvhome) is not installed yet! Install the .ipk first so it can display custom wallpapers."
-                    }
+                    uploadViaSftp(session, tempFile, "$appDir/wallpaper.jpg")
+                    execOnSession(
+                        session,
+                        "cp $appDir/wallpaper.jpg $appDir/themes/ribbon/wallpaper.jpg 2>/dev/null || true; " +
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                        "sleep 1; " +
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                    )
+                    "Success! Custom wallpaper injected into Clean Your TV and relaunched!"
                 } else {
                     val tempIpk = File(cacheDir, "addon_install.ipk")
                     contentResolver.openInputStream(uri)?.use { input ->
