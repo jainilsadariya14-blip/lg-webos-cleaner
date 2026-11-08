@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
                 .show()
         }
 
-        // 3. Clean TV (Close Bloat & Clear Cache)
+        // 3. Clean TV
         findViewById<Button>(R.id.btnClean).setOnClickListener {
             savePrefs()
             runTask("Cleaning TV background bloat & cache...") {
@@ -119,13 +119,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 4. Custom Wallpaper from Phone
+        // 4. Custom Wallpaper
         findViewById<Button>(R.id.btnWallpaper).setOnClickListener {
             savePrefs()
             pickWallpaperLauncher.launch("image/*")
         }
 
-        // 5. Apply Selected Theme
+        // 5. Apply Theme
         findViewById<Button>(R.id.btnApplyTheme).setOnClickListener {
             savePrefs()
             val selectedTheme = spThemes.selectedItem?.toString() ?: "Classic"
@@ -144,22 +144,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 6. Install Add-On (.ipk)
+        // 6. Install Add-On
         findViewById<Button>(R.id.btnInstallAddon).setOnClickListener {
             savePrefs()
             pickIpkLauncher.launch("*/*")
         }
 
-        // 7. Quick TV Settings Buttons
-        findViewById<Button>(R.id.btnSettingsPicture).setOnClickListener {
-            openTvSettings("picture")
-        }
-        findViewById<Button>(R.id.btnSettingsSound).setOnClickListener {
-            openTvSettings("sound")
-        }
-        findViewById<Button>(R.id.btnSettingsNetwork).setOnClickListener {
-            openTvSettings("network")
-        }
+        // 7. Quick Settings
+        findViewById<Button>(R.id.btnSettingsPicture).setOnClickListener { openTvSettings("picture") }
+        findViewById<Button>(R.id.btnSettingsSound).setOnClickListener { openTvSettings("sound") }
+        findViewById<Button>(R.id.btnSettingsNetwork).setOnClickListener { openTvSettings("network") }
     }
 
     private fun openTvSettings(target: String) {
@@ -229,11 +223,22 @@ class MainActivity : AppCompatActivity() {
         val user = if (isRoot) "root" else "prisoner"
 
         val jsch = JSch()
-        val session = jsch.getSession(user, host, port)
-        if (pass.isNotEmpty()) {
-            session.setPassword(pass)
+        
+        // If using developer mode key-based auth with a passphrase
+        val keyFile = File(filesDir, "webos_rsa")
+        if (!isRoot && pass.length == 6 && !keyFile.exists()) {
+            // Write a dummy or fallback connection handler for webOS key server
         }
-        session.setConfig("StrictHostKeyChecking", "no")
+
+        val session = jsch.getSession(user, host, port)
+        session.setPassword(pass)
+        
+        // Force keyboard-interactive / password fallback for webOS developer daemon
+        val cipherConfig = java.util.Properties()
+        cipherConfig.put("StrictHostKeyChecking", "no")
+        cipherConfig.put("PreferredAuthentications", "publickey,password,keyboard-interactive")
+        session.setConfig(cipherConfig)
+        
         session.connect(10000)
         return session
     }
