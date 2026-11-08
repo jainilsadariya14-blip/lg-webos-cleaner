@@ -32,19 +32,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etTvIp: EditText
     private lateinit var etPassphrase: EditText
     private lateinit var rbNoRoot: RadioButton
-    private lateinit var spThemes: Spinner
     private lateinit var tvStatus: TextView
 
     private val pickWallpaperLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { handleFileUpload(it, isWallpaper = true) }
+        uri?.let { handleWallpaperUpload(it) }
     }
 
     private val pickIpkLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { handleFileUpload(it, isWallpaper = false) }
+        uri?.let { handleIpkUpload(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,24 +53,18 @@ class MainActivity : AppCompatActivity() {
         etTvIp = findViewById(R.id.etTvIp)
         etPassphrase = findViewById(R.id.etPassphrase)
         rbNoRoot = findViewById(R.id.rbNoRoot)
-        spThemes = findViewById(R.id.spThemes)
         tvStatus = findViewById(R.id.tvStatus)
 
         val prefs = getSharedPreferences("lg_prefs", Context.MODE_PRIVATE)
         etTvIp.setText(prefs.getString("ip", ""))
         etPassphrase.setText(prefs.getString("pass", ""))
 
-        val themes = arrayOf("classic", "liquid-glass", "ribbon", "alpine", "minimal", "retro")
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, themes)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spThemes.adapter = adapter
-
         // 1. Pair & Test Connection
         findViewById<Button>(R.id.btnPair).setOnClickListener {
             savePrefs()
             runTask("Checking TV connection...") {
-                val out = execSshCommand("luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"Phone Connected!\"}'")
-                "Connected to TV successfully! $out"
+                val out = execSshCommand("luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"Phone Connected to TV!\"}'")
+                "Connected successfully! $out"
             }
         }
 
@@ -80,7 +73,7 @@ class MainActivity : AppCompatActivity() {
             savePrefs()
             AlertDialog.Builder(this)
                 .setTitle("Restore LG Home")
-                .setMessage("Stop custom Home and open original LG Home?")
+                .setMessage("Stop custom launcher and open original LG Home?")
                 .setPositiveButton("Restore") { _, _ ->
                     runTask("Restoring original LG Home...") {
                         val cmd = "luna-send-pub -n 1 'luna://com.local.nativehome.service/disable' '{}' 2>/dev/null; " +
@@ -93,45 +86,32 @@ class MainActivity : AppCompatActivity() {
                 .show()
         }
 
-        // 3. Clean TV & Restart Home
+        // 3. Clean TV Cache Safely (Without Touching App Configurations)
         findViewById<Button>(R.id.btnClean).setOnClickListener {
             savePrefs()
-            runTask("Cleaning cache & restarting launcher...") {
+            runTask("Cleaning background system cache safely...") {
                 val cmd = "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
-                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                          "sleep 1; " +
-                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.webos.app.discovery\"}' 2>/dev/null; " +
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.webos.app.browser\"}' 2>/dev/null; " +
+                          "luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"TV Cache Cleaned Successfully!\"}'"
                 val res = execSshCommand(cmd)
-                "TV cleaned and Clean Your TV restarted!\n$res"
+                "System cache cleaned successfully while keeping your app layout intact!\n$res"
             }
         }
 
-        // 4. Custom Wallpaper
+        // 4. Set Custom Wallpaper from Phone
         findViewById<Button>(R.id.btnWallpaper).setOnClickListener {
             savePrefs()
             pickWallpaperLauncher.launch("image/*")
         }
 
-        // 5. Apply Theme
-        findViewById<Button>(R.id.btnApplyTheme).setOnClickListener {
-            savePrefs()
-            val selectedTheme = spThemes.selectedItem?.toString() ?: "classic"
-            runTask("Applying '$selectedTheme' theme...") {
-                val cmd = "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                          "sleep 1; " +
-                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\",\"params\":{\"theme\":\"$selectedTheme\"}}'"
-                val res = execSshCommand(cmd)
-                "Theme command sent to TV!\n$res"
-            }
-        }
-
-        // 6. Install Add-On (.ipk)
+        // 5. Install Add-On (.ipk)
         findViewById<Button>(R.id.btnInstallAddon).setOnClickListener {
             savePrefs()
             pickIpkLauncher.launch("*/*")
         }
 
-        // 7. Quick Settings
+        // 6. Quick Settings
         findViewById<Button>(R.id.btnSettingsPicture).setOnClickListener { openTvSettings("picture") }
         findViewById<Button>(R.id.btnSettingsSound).setOnClickListener { openTvSettings("sound") }
         findViewById<Button>(R.id.btnSettingsNetwork).setOnClickListener { openTvSettings("network") }
@@ -146,38 +126,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleFileUpload(uri: Uri, isWallpaper: Boolean) {
-        runTask(if (isWallpaper) "Uploading wallpaper..." else "Installing .ipk add-on...") {
+    private fun handleWallpaperUpload(uri: Uri) {
+        runTask("Optimizing & applying custom phone wallpaper...") {
             val session = createSshSession()
             try {
                 execOnSession(session, "mkdir -p /media/developer/temp")
-                if (isWallpaper) {
-                    val tempFile = File(cacheDir, "wallpaper.jpg")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        val original = BitmapFactory.decodeStream(input)
-                            ?: throw Exception("Could not decode selected image.")
-                        val scaled = Bitmap.createScaledBitmap(original, 1920, 1080, true)
-                        FileOutputStream(tempFile).use { out ->
-                            scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        }
+                val tempFile = File(cacheDir, "wallpaper.jpg")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    val original = BitmapFactory.decodeStream(input)
+                        ?: throw Exception("Could not decode selected image.")
+                    val scaled = Bitmap.createScaledBitmap(original, 1920, 1080, true)
+                    FileOutputStream(tempFile).use { out ->
+                        scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
                     }
-                    uploadViaSftp(session, tempFile, "/media/developer/temp/wallpaper.jpg")
-                    val cmd = "cp /media/developer/temp/wallpaper.jpg /media/developer/apps/usr/palm/applications/com.gathin.tvhome/wallpaper.jpg 2>/dev/null || true; " +
-                              "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
-                              "sleep 1; " +
-                              "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                    execOnSession(session, cmd)
-                    "Success! Wallpaper applied to TV!"
-                } else {
-                    val tempIpk = File(cacheDir, "addon_install.ipk")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(tempIpk).use { out -> input.copyTo(out) }
-                    }
-                    uploadViaSftp(session, tempIpk, "/media/developer/temp/addon_install.ipk")
-                    val cmd = "luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/media/developer/temp/addon_install.ipk\",\"subscribe\":true}'"
-                    val out = execOnSession(session, cmd, 25000)
-                    "Add-on installed!\n${out.take(200)}"
                 }
+                uploadViaSftp(session, tempFile, "/media/developer/temp/wallpaper.jpg")
+                val cmd = "cp /media/developer/temp/wallpaper.jpg /media/developer/apps/usr/palm/applications/com.gathin.tvhome/wallpaper.jpg 2>/dev/null || true; " +
+                          "cp /media/developer/temp/wallpaper.jpg /media/developer/apps/usr/palm/applications/com.gathin.tvhome/themes/ribbon/wallpaper.jpg 2>/dev/null || true; " +
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                          "sleep 1; " +
+                          "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                execOnSession(session, cmd)
+                "Success! Custom wallpaper applied from your phone!"
+            } finally {
+                session.disconnect()
+            }
+        }
+    }
+
+    private fun handleIpkUpload(uri: Uri) {
+        runTask("Uploading & installing .ipk add-on...") {
+            val session = createSshSession()
+            try {
+                execOnSession(session, "mkdir -p /media/developer/temp")
+                val tempIpk = File(cacheDir, "addon_install.ipk")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(tempIpk).use { out -> input.copyTo(out) }
+                }
+                uploadViaSftp(session, tempIpk, "/media/developer/temp/addon_install.ipk")
+                val cmd = "luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/media/developer/temp/addon_install.ipk\",\"subscribe\":true}'"
+                val out = execOnSession(session, cmd, 25000)
+                "Add-on installed successfully!\n${out.take(200)}"
             } finally {
                 session.disconnect()
             }
