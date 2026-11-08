@@ -15,12 +15,17 @@ import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
+import com.jcraft.jsch.UIKeyboardInteractive
+import com.jcraft.jsch.UserInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Properties
 
 class MainActivity : AppCompatActivity() {
 
@@ -64,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         // 1. Pair & Test Connection
         findViewById<Button>(R.id.btnPair).setOnClickListener {
             savePrefs()
-            runTask("Connecting to TV via SSH...") {
+            runTask("Fetching SSH key from TV & connecting...") {
                 val cmd = "luna-send-pub -n 1 'luna://com.webos.notification/createToast' '{\"message\":\"Phone Connected to LG webOS Studio!\"}'"
                 execSshCommand(cmd)
                 "Connected! Toast notification displayed on TV."
@@ -213,6 +218,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun fetchDevKeyFromTv(host: String): File {
+        val keyFile = File(filesDir, "webos_rsa_$host")
+        try {
+            // LG Developer Mode Key Server hosts the SSH private key on HTTP port 9991
+            val url = URL("http://$host:9991/webos_rsa")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.requestMethod = "GET"
+            if (conn.responseCode == 200) {
+                val keyText = conn.inputStream.bufferedReader().use { it.readText() }
+                if (keyText.contains("BEGIN") && keyText.contains("PRIVATE KEY")) {
+                    keyFile.writeText(keyText)
+                    return keyFile
+                }
+            }
+        } catch (_: Exception) {
+            // Ignore if Key Server was turned off after previously caching the key
+        }
+        if (keyFile.exists() && keyFile.length() > 100) {
+            return keyFile
+        }
+        throw Exception(
+            "Could not fetch SSH key from TV (http://$host:9991/webos_rsa). " +
+            "Please open the Developer Mode app on your TV and turn ON 'Key Server'!"
+        )
+    }
+
     private fun createSshSession(): Session {
         val host = etTvIp.text.toString().trim()
         val pass = etPassphrase.text.toString().trim()
@@ -223,22 +256,45 @@ class MainActivity : AppCompatActivity() {
         val user = if (isRoot) "root" else "prisoner"
 
         val jsch = JSch()
-        
-        // If using developer mode key-based auth with a passphrase
-        val keyFile = File(filesDir, "webos_rsa")
-        if (!isRoot && pass.length == 6 && !keyFile.exists()) {
-            // Write a dummy or fallback connection handler for webOS key server
+
+        if (!isRoot) {
+            // No-Root Developer Mode requires the private key from port 9991 unlocked with the 6-char passphrase
+            val keyFile = fetchDevKeyFromTv(host)
+            if (pass.isNotEmpty()) {
+                jsch.addIdentity(keyFile.absolutePath, pass.toByteArray(Charsets.UTF_8))
+            } else {
+                jsch.addIdentity(keyFile.absolutePath)
+            }
         }
 
         val session = jsch.getSession(user, host, port)
-        session.setPassword(pass)
-        
-        // Force keyboard-interactive / password fallback for webOS developer daemon
-        val cipherConfig = java.util.Properties()
-        cipherConfig.put("StrictHostKeyChecking", "no")
-        cipherConfig.put("PreferredAuthentications", "publickey,password,keyboard-interactive")
-        session.setConfig(cipherConfig)
-        
+        if (pass.isNotEmpty()) {
+            session.setPassword(pass)
+        }
+
+        session.userInfo = object : UserInfo, UIKeyboardInteractive {
+            override fun getPassphrase(): String = pass
+            override fun getPassword(): String = pass
+            override fun promptPassword(message: String?): Boolean = true
+            override fun promptPassphrase(message: String?): Boolean = true
+            override fun promptYesNo(message: String?): Boolean = true
+            override fun showMessage(message: String?) {}
+            override fun promptKeyboardInteractive(
+                destination: String?,
+                name: String?,
+                instruction: String?,
+                prompt: Array<out String>?,
+                echo: BooleanArray?
+            ): Array<String> = Array(prompt?.size ?: 0) { pass }
+        }
+
+        val config = Properties()
+        config["StrictHostKeyChecking"] = "no"
+        config["PreferredAuthentications"] = "publickey,keyboard-interactive,password"
+        config["PubkeyAcceptedAlgorithms"] = "+ssh-rsa"
+        config["HostKeyAlgorithms"] = "+ssh-rsa"
+        session.setConfig(config)
+
         session.connect(10000)
         return session
     }
