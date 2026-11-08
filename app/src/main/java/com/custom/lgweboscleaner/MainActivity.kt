@@ -103,26 +103,40 @@ class MainActivity : AppCompatActivity() {
                 .show()
         }
 
-        // 3. Clean TV & Relaunch Clean Home
+                // 3. Clean TV & Sync Apps into Launcher
         findViewById<Button>(R.id.btnClean).setOnClickListener {
             savePrefs()
-            runTask("Cleaning TV temp files & launching Clean Home...") {
-                val isRoot = !rbNoRoot.isChecked
-                val cmd = if (isRoot) {
-                    "rm -rf /tmp/* /var/cache/* && sync && echo 3 > /proc/sys/vm/drop_caches && " +
-                    "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                } else {
-                    "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
-                    "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
-                }
-                val res = execSshCommand(cmd)
-                if (res.contains("\"returnValue\":false")) {
-                    "Temp cache cleared, but 'com.gathin.tvhome' is not installed on TV yet!\n$res"
-                } else {
-                    "Temp cache cleared & Clean Your TV Home launched on screen!\n$res"
-                }
+            runTask("Cleaning cache & loading TV apps into launcher...") {
+                val appDir = "/media/developer/apps/usr/palm/applications/com.gathin.tvhome"
+                val appsJs = """
+                    window.TV_APPS = {
+                      "apps": [
+                        {"id":"youtube.leanback.v4","title":"YouTube","icon":"","iconColor":"#FF0000"},
+                        {"id":"netflix","title":"Netflix","icon":"","iconColor":"#E50914"},
+                        {"id":"amazon","title":"Prime Video","icon":"","iconColor":"#00A8E1"},
+                        {"id":"com.webos.app.livetv","title":"Live TV","icon":"","iconColor":"#2B2B2B"},
+                        {"id":"com.webos.app.browser","title":"Web Browser","icon":"","iconColor":"#0078D7"},
+                        {"id":"com.webos.app.photovideo","title":"Media Player","icon":"","iconColor":"#6B4FBB"},
+                        {"id":"com.palm.app.settings","title":"TV Settings","icon":"","iconColor":"#555555"},
+                        {"id":"com.webos.app.home","title":"Original LG Home","icon":"","iconColor":"#A50034"}
+                      ],
+                      "inputs": [
+                        {"appId":"com.webos.app.hdmi1","label":"HDMI 1"},
+                        {"appId":"com.webos.app.hdmi2","label":"HDMI 2"},
+                        {"appId":"com.webos.app.hdmi3","label":"HDMI 3"}
+                      ]
+                    };
+                """.trimIndent()
+
+                val cmd = "rm -rf /tmp/* /media/developer/temp/* 2>/dev/null; " +
+                        "cat << 'EOF' > $appDir/apps.js\n$appsJs\nEOF\n" +
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/closeByAppId' '{\"id\":\"com.gathin.tvhome\"}' 2>/dev/null; " +
+                        "luna-send-pub -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.gathin.tvhome\"}'"
+                execSshCommand(cmd)
+                "Success! Apps loaded into launcher and restarted on TV!"
             }
         }
+        
 
         // 4. Custom Wallpaper from Phone
         findViewById<Button>(R.id.btnWallpaper).setOnClickListener {
