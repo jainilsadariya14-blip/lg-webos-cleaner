@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121110"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Header -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Your TV,\nunder control"
+            android:textColor="#F2EFE9"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:lineSpacingExtra="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="16dp"
+            android:text="Clean memory, set custom wallpapers, switch themes, install add-ons, or restore standard LG Home."
+            android:textColor="#A09D96"
+            android:textSize="14sp" />
+
+        <!-- Connection Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardBackgroundColor="#1C1B19"
+            app:cardCornerRadius="18dp"
+            app:strokeColor="#33312E"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <EditText
+                    android:id="@+id/etTvIp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="TV IP Address (e.g. 192.168.1.50)"
+                    android:textColor="#F2EFE9"
+                    android:textColorHint="#75726B"
+                    android:inputType="textUri" />
+
+                <EditText
+                    android:id="@+id/etPassphrase"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="Dev Mode Passphrase (6 chars) or Root Pass"
+                    android:textColor="#F2EFE9"
+                    android:textColorHint="#75726B"
+                    android:inputType="textPassword" />
+
+                <RadioGroup
+                    android:id="@+id/rgMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
+                    <RadioButton
+                        android:id="@+id/rbNoRoot"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="No-Root (:9922)"
+                        android:textColor="#E0DDD5"
+                        android:checked="true" />
+                    <RadioButton
+                        android:id="@+id/rbRoot"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Root (:22)"
+                        android:textColor="#E0DDD5"
+                        android:layout_marginStart="16dp" />
+                </RadioGroup>
+
+                <Button
+                    android:id="@+id/btnPair"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="#E55835"
+                    android:textColor="#FFFFFF"
+                    android:text="Test SSH Connection &amp; Toast TV" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Live Status Box -->
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="18dp"
+            android:padding="14dp"
+            android:background="#1C1B19"
+            android:textColor="#4ADE80"
+            android:text="Status: Ready"
+            android:textSize="13sp" />
+
+        <!-- Restore LG Home Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardRestoreHome"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="18dp"
+            android:clickable="true"
+            android:focusable="true"
+            app:cardBackgroundColor="#1C1B19"
+            app:cardCornerRadius="18dp"
+            app:strokeColor="#E55835"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="↻  Restore LG Home"
+                    android:textColor="#F2EFE9"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Restore your TV's original Home screen and stop custom redirects"
+                    android:textColor="#A09D96"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Clean & Customize Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Cleaner, Themes &amp; Customizations"
+            android:textColor="#F2EFE9"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/btnClean"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="#2B2927"
+            android:textColor="#F2EFE9"
+            android:text="🧹 Clean TV (Close Bloat &amp; Clear Cache)" />
+
+        <Button
+            android:id="@+id/btnWallpaper"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="#2B2927"
+            android:textColor="#F2EFE9"
+            android:text="🖼️ Set Custom Wallpaper from Phone" />
+
+        <!-- Theme Picker Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            app:cardBackgroundColor="#1C1B19"
+            app:cardCornerRadius="14dp"
+            app:strokeColor="#33312E"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Select Home Theme:"
+                    android:textColor="#A09D96"
+                    android:textSize="13sp" />
+
+                <Spinner
+                    android:id="@+id/spThemes"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="6dp"
+                    android:background="#2B2927" />
+
+                <Button
+                    android:id="@+id/btnApplyTheme"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#E55835"
+                    android:textColor="#FFFFFF"
+                    android:text="🎨 Apply Selected Theme" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <Button
+            android:id="@+id/btnInstallAddon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="#2B2927"
+            android:textColor="#F2EFE9"
+            android:text="📦 Install Add-On (.ipk File from Phone)" />
+
+        <!-- TV Settings Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Quick TV Settings"
+            android:textColor="#F2EFE9"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnSettingsPicture"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#2B2927"
+                android:textColor="#F2EFE9"
+                android:text="⚙️ Picture" />
+
+            <Button
+                android:id="@+id/btnSettingsSound"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="#2B2927"
+                android:textColor="#F2EFE9"
+                android:text="🔊 Sound" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnSettingsNetwork"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="24dp"
+            android:backgroundTint="#2B2927"
+            android:textColor="#F2EFE9"
+            android:text="🌐 Open Network &amp; All Settings" />
+
+    </LinearLayout>
+</ScrollView>
